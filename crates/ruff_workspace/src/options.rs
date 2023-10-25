@@ -1683,6 +1683,9 @@ pub struct IsortOptions {
     /// `combine-as-imports = true`. When `combine-as-imports` isn't
     /// enabled, every aliased `import from` will be given its own line, in
     /// which case, wrapping is not necessary.
+    ///
+    /// Using this setting with the formatter requires that `format.skip-magic-trailing-comma` is set to `false` (default)
+    /// to avoid that the formatter collapses members if they all fit on the line.
     #[option(
         default = r#"false"#,
         value_type = "bool",
@@ -1907,6 +1910,9 @@ pub struct IsortOptions {
 
     /// The number of blank lines to place after imports.
     /// Use `-1` for automatic determination.
+    ///
+    /// Note: Value's other than `-1`, `1`, or `2` are incompatible with the formatter because it
+    /// enforces at least one emty and at most two empty lines after import .
     #[option(
         default = r#"-1"#,
         value_type = "int",
@@ -1918,6 +1924,9 @@ pub struct IsortOptions {
     pub lines_after_imports: Option<isize>,
 
     /// The number of lines to place between "direct" and `import from` imports.
+    ///
+    /// Note: Values larger than 1 are incompatible with the formatter because it only
+    /// preserves up to one empty line after imports in nested blocks.
     #[option(
         default = r#"0"#,
         value_type = "int",

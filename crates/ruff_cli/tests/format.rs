@@ -363,11 +363,13 @@ select = ["ALL"]
 ignore = ["D203", "D212"]
 
 [isort]
-force-single-line = true
-force-wrap-aliases = true
-lines-after-imports = 0
+lines-after-imports = 3
 lines-between-types = 2
-split-on-trailing-comma = true
+force-wrap-aliases = true
+combine-as-imports = true
+
+[format]
+skip-magic-trailing-comma = true
 "#,
     )?;
 
@@ -390,7 +392,9 @@ def say_hy(name: str):
 
     ----- stderr -----
     warning: The following rules may cause conflicts when used with the formatter: 'COM812', 'COM819', 'D206', 'E501', 'ISC001', 'Q000', 'Q001', 'Q002', 'Q003', 'W191'. To avoid unexpected behavior, we recommend disabling these rules, either by removing them from the `select` or `extend-select` configuration, or adding then to the `ignore` configuration.
-    warning: The following isort options may cause conflicts when used with the formatter: 'isort.force-single-line', 'isort.force-wrap-aliases', 'isort.lines-after-imports', 'isort.lines_between_types'. To avoid unexpected behavior, we recommend disabling these options by removing them from the configuration.
+    warning: The isort option 'isort.lines-after-imports' with a value other than `-1`, `1` or `2` is incompatible with the formatter. To avoid unexpected behavior, we recommend setting the option to one of: `2`, `1`, or `-1` (default).
+    warning: The isort option 'isort.lines-between-types' with a value larger than 1 is incompatible with the formatter. To avoid unexpected behavior, we recommend setting the option to one of: `1` or `0` (default).
+    warning: The isort option 'isort.force-wrap-aliases' is incompatible with the formatter 'format.skip-magic-trailing-comma=true' option. To avoid unexpected behavior, we recommend either setting 'isort.force-wrap-aliases=false' or 'format.skip-magic-trailing-comma=true'.
     "###);
     Ok(())
 }
@@ -406,11 +410,13 @@ select = ["ALL"]
 ignore = ["D203", "D212"]
 
 [isort]
-force-single-line = true
-force-wrap-aliases = true
-lines-after-imports = 0
+lines-after-imports = 3
 lines-between-types = 2
-split-on-trailing-comma = true
+force-wrap-aliases = true
+combine-as-imports = true
+
+[format]
+skip-magic-trailing-comma = true
 "#,
     )?;
 
@@ -429,7 +435,53 @@ def say_hy(name: str):
 
     ----- stderr -----
     warning: The following rules may cause conflicts when used with the formatter: 'COM812', 'COM819', 'D206', 'E501', 'ISC001', 'Q000', 'Q001', 'Q002', 'Q003', 'W191'. To avoid unexpected behavior, we recommend disabling these rules, either by removing them from the `select` or `extend-select` configuration, or adding then to the `ignore` configuration.
-    warning: The following isort options may cause conflicts when used with the formatter: 'isort.force-single-line', 'isort.force-wrap-aliases', 'isort.lines-after-imports', 'isort.lines_between_types'. To avoid unexpected behavior, we recommend disabling these options by removing them from the configuration.
+    warning: The isort option 'isort.lines-after-imports' with a value other than `-1`, `1` or `2` is incompatible with the formatter. To avoid unexpected behavior, we recommend setting the option to one of: `2`, `1`, or `-1` (default).
+    warning: The isort option 'isort.lines-between-types' with a value larger than 1 is incompatible with the formatter. To avoid unexpected behavior, we recommend setting the option to one of: `1` or `0` (default).
+    warning: The isort option 'isort.force-wrap-aliases' is incompatible with the formatter 'format.skip-magic-trailing-comma=true' option. To avoid unexpected behavior, we recommend either setting 'isort.force-wrap-aliases=false' or 'format.skip-magic-trailing-comma=true'.
+    "###);
+    Ok(())
+}
+
+#[test]
+fn valid_linter_options() -> Result<()> {
+    let tempdir = TempDir::new()?;
+    let ruff_toml = tempdir.path().join("ruff.toml");
+    fs::write(
+        &ruff_toml,
+        r#"
+select = ["ALL"]
+ignore = ["D203", "D212"]
+
+[isort]
+lines-after-imports = 2
+lines-between-types = 1
+force-wrap-aliases = true
+combine-as-imports = true
+
+[format]
+skip-magic-trailing-comma = false
+"#,
+    )?;
+
+    let test_path = tempdir.path().join("test.py");
+    fs::write(
+        &test_path,
+        r#"
+def say_hy(name: str):
+        print(f"Hy {name}")"#,
+    )?;
+
+    assert_cmd_snapshot!(Command::new(get_cargo_bin(BIN_NAME))
+        .args(["format", "--no-cache", "--config"])
+        .arg(&ruff_toml)
+        .arg(test_path), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+    1 file reformatted
+
+    ----- stderr -----
+    warning: The following rules may cause conflicts when used with the formatter: 'COM812', 'COM819', 'D206', 'E501', 'ISC001', 'Q000', 'Q001', 'Q002', 'Q003', 'W191'. To avoid unexpected behavior, we recommend disabling these rules, either by removing them from the `select` or `extend-select` configuration, or adding then to the `ignore` configuration.
     "###);
     Ok(())
 }
