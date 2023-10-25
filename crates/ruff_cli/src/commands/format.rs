@@ -19,11 +19,11 @@ use ruff_diagnostics::SourceMap;
 use ruff_linter::fs;
 use ruff_linter::logging::LogLevel;
 use ruff_linter::registry::Rule;
-use ruff_linter::settings::rule_table::RuleTable;
+use ruff_linter::rules::flake8_quotes::settings::Quote;
 use ruff_linter::source_kind::{SourceError, SourceKind};
 use ruff_linter::warn_user_once;
 use ruff_python_ast::{PySourceType, SourceType};
-use ruff_python_formatter::{format_module_source, FormatModuleError};
+use ruff_python_formatter::{format_module_source, FormatModuleError, QuoteStyle};
 use ruff_text_size::{TextLen, TextRange, TextSize};
 use ruff_workspace::resolver::{
     match_exclusion, python_files_in_path, PyprojectConfig, ResolvedFile, Resolver,
@@ -685,31 +685,79 @@ pub(super) fn warn_incompatible_formatter_settings(
     {
         let mut incompatible_rules = Vec::new();
 
-        for incompatible_rule in RuleTable::from_iter([
-            Rule::LineTooLong,
-            Rule::TabIndentation,
-            Rule::IndentationWithInvalidMultiple,
-            Rule::IndentationWithInvalidMultipleComment,
-            Rule::OverIndented,
-            Rule::IndentWithSpaces,
+        for rule in [
+            // The formatter might collapse implicit string concatenation on a single line.
             Rule::SingleLineImplicitStringConcatenation,
+            // Flags missing trailing commas when all arguments are on its own line:
+            // ```python
+            // def args(
+            //     aaaaaaaa, bbbbbbbbb, cccccccccc, ddddddddd, eeeeeeee, ffffff, gggggggggggg, hhhh
+            // ):
+            //     pass
+            // ```
             Rule::MissingTrailingComma,
-            Rule::ProhibitedTrailingComma,
-            Rule::BadQuotesInlineString,
-            Rule::BadQuotesMultilineString,
-            Rule::BadQuotesDocstring,
-            Rule::AvoidableEscapedQuote,
-        ])
-        .iter_enabled()
-        {
-            if setting.linter.rules.enabled(incompatible_rule) {
-                incompatible_rules.push(format!("'{}'", incompatible_rule.noqa_code()));
+        ] {
+            if setting.linter.rules.enabled(rule) {
+                incompatible_rules.push(rule);
+            }
+        }
+
+        // Rules assuming indent style space
+        if setting.formatter.indent_style.is_tab() {
+            for rule in [Rule::TabIndentation, Rule::IndentWithSpaces] {
+                if setting.linter.rules.enabled(rule) {
+                    incompatible_rules.push(rule);
+                }
+            }
+        }
+
+        // Rules assuming an indent width of 4
+        if setting.formatter.indent_width.value() != 4 {
+            for rule in [
+                Rule::IndentationWithInvalidMultiple,
+                Rule::IndentationWithInvalidMultipleComment,
+                Rule::OverIndented,
+            ] {
+                if setting.linter.rules.enabled(rule) {
+                    incompatible_rules.push(rule);
+                }
             }
         }
 
         if !incompatible_rules.is_empty() {
-            incompatible_rules.sort();
-            warn!("The following rules may cause conflicts when used with the formatter: {}. To avoid unexpected behavior, we recommend disabling these rules, either by removing them from the `select` or `extend-select` configuration, or adding then to the `ignore` configuration.", incompatible_rules.join(", "));
+            let mut rule_names: Vec<_> = incompatible_rules
+                .into_iter()
+                .map(|rule| format!("'{}'", rule.noqa_code()))
+                .collect();
+            rule_names.sort();
+            warn!("The following rules may cause conflicts when used with the formatter: {}. To avoid unexpected behavior, we recommend disabling these rules, either by removing them from the `select` or `extend-select` configuration, or adding then to the `ignore` configuration.", rule_names.join(", "));
+        }
+
+        // Rules with different quote styles.
+        if matches!(
+            (
+                setting.formatter.quote_style,
+                setting.linter.flake8_quotes.inline_quotes
+            ),
+            (QuoteStyle::Single, Quote::Double) | (QuoteStyle::Double, Quote::Single)
+        ) && setting
+            .linter
+            .rules
+            .any_enabled(&[Rule::BadQuotesInlineString, Rule::AvoidableEscapedQuote])
+        {
+            warn!("The `flake8-quotes.inline-quotes` option is incompatible with the formatter's `format.quote-style` option. Change your configuration and either set both options to single or double quotes.");
+        }
+
+        if setting.linter.rules.enabled(Rule::BadQuotesMultilineString)
+            && setting.linter.flake8_quotes.multiline_quotes == Quote::Single
+        {
+            warn!("The `flake8-quotes.multiline-quotes` option is incompatible with the formatter that always uses double quotes for multiline strings. Please change the `flake8-quotes.multiline-quotes` option to use double quotes.`");
+        }
+
+        if setting.linter.rules.enabled(Rule::BadQuotesDocstring)
+            && setting.linter.flake8_quotes.docstring_quotes == Quote::Single
+        {
+            warn!("The `flake8-quotes.docstring-quotes` option is incompatible with the formatter's that always uses double quotes. Please change the `flake8-quotes.docstring-quotes` to use double quotes.");
         }
 
         if setting.linter.rules.enabled(Rule::UnsortedImports) {
